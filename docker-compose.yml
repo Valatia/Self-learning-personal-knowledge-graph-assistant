@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: rexi-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/neo4j_password
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 2G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+    networks:
+      - rexi-network
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:v1.7.0
+    container_name: rexi-qdrant
+    ports:
+      - "6333:6333"  # HTTP
+      - "6334:6334"  # gRPC
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    networks:
+      - rexi-network
+
+  # PostgreSQL for Metadata
+  postgres:
+    image: postgres:15
+    container_name: rexi-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: rexi
+      POSTGRES_USER: rexi
+      POSTGRES_PASSWORD: rexi_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - rexi-network
+
+  # Redis for Caching and Queues
+  redis:
+    image: redis:7-alpine
+    container_name: rexi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - rexi-network
+
+  # Elasticsearch for Full-text Search
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: rexi-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - rexi-network
+
+  # REXI Backend Application
+  rexi-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rexi-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=neo4j_password
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=rexi
+      - POSTGRES_USER=rexi
+      - POSTGRES_PASSWORD=rexi_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - neo4j
+      - qdrant
+      - postgres
+      - redis
+      - elasticsearch
+    networks:
+      - rexi-network
+
+  # REXI Frontend Application
+  rexi-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rexi-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    depends_on:
+      - rexi-backend
+    networks:
+      - rexi-network
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  qdrant_storage:
+  postgres_data:
+  redis_data:
+  elasticsearch_data:
+
+networks:
+  rexi-network:
+    driver: bridge
