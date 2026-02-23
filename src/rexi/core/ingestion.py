@@ -15,6 +15,9 @@ from rexi.models.relationships import Relationship, RelationshipType
 from rexi.services.embedding_service import EmbeddingService
 from rexi.services.llm_service import LLMService
 from rexi.core.knowledge_graph import KnowledgeGraph
+from rexi.agents.entity_extractor import EntityExtractor
+from rexi.agents.relation_extractor import RelationExtractor
+from rexi.agents.entity_resolver import EntityResolver
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,9 @@ class IngestionEngine:
         self.embedding_service = EmbeddingService()
         self.llm_service = LLMService()
         self.knowledge_graph = KnowledgeGraph()
+        self.entity_extractor = EntityExtractor()
+        self.relation_extractor = RelationExtractor()
+        self.entity_resolver = EntityResolver()
         
         # Supported file types
         self.supported_extensions = {
@@ -136,80 +142,79 @@ class IngestionEngine:
             chunk_size = 4000  # Tokens
             chunks = self._chunk_text(document.content, chunk_size)
             
-            all_entities = {}
+            all_entities = []
             all_relationships = []
             
             for i, chunk in enumerate(chunks):
-                # Extract entities and relationships using LLM
-                extraction_result = self.llm_service.generate_entities_and_relations(chunk)
+                # Extract entities using advanced NER
+                entities_data = self.entity_extractor.extract_entities(chunk)
+                
+                # Extract relations using dependency parsing
+                relationships_data = self.relation_extractor.extract_relations(chunk, entities_data)
                 
                 # Process entities
-                for entity_data in extraction_result.get("entities", []):
-                    entity_name = entity_data.get("name", "").strip()
-                    if entity_name and len(entity_name) > 2:
-                        # Merge similar entities
-                        entity_id = self._normalize_entity_name(entity_name)
-                        if entity_id not in all_entities:
-                            all_entities[entity_id] = {
-                                "name": entity_name,
-                                "type": EntityType(entity_data.get("type", "concept")),
-                                "description": entity_data.get("description", ""),
-                                "confidence": entity_data.get("confidence", 0.8),
-                                "source_references": [document.id],
-                                "chunks": [i]
-                            }
-                        else:
-                            all_entities[entity_id]["source_references"].append(document.id)
-                            all_entities[entity_id]["chunks"].append(i)
-                            # Update confidence (average)
-                            conf = all_entities[entity_id]["confidence"]
-                            new_conf = entity_data.get("confidence", 0.8)
-                            all_entities[entity_id]["confidence"] = (conf + new_conf) / 2
+                for entity_data in entities_data:
+                    entity = Entity(
+                        name=entity_data["text"],
+                        type=entity_data["type"],
+                        description=entity_data.get("context", ""),
+                        confidence=entity_data["confidence"],
+                        source_references=[document.id],
+                        properties={
+                            "chunk_index": i,
+                            "extraction_method": entity_data["source"],
+                            "context": entity_data.get("context", "")
+                        }
+                    )
+                    
+                    # Generate embedding for entity
+                    entity_text = f"{entity.name} {entity.description or ''}"
+                    entity.embedding = self.embedding_service.encode_text(entity_text)
+                    
+                    all_entities.append(entity)
                 
                 # Process relationships
-                for rel_data in extraction_result.get("relations", []):
-                    source_name = self._normalize_entity_name(rel_data.get("source", "").strip())
-                    target_name = self._normalize_entity_name(rel_data.get("target", "").strip())
-                    
-                    if source_name in all_entities and target_name in all_entities:
-                        relationship = Relationship(
-                            source_entity_id=source_name,
-                            target_entity_id=target_name,
-                            type=RelationshipType(rel_data.get("type", "related_to")),
-                            confidence=rel_data.get("confidence", 0.8),
-                            evidence_references=[document.id]
-                        )
-                        all_relationships.append(relationship)
+                for rel_data in relationships_data:
+                    relationship = Relationship(
+                        source_entity_id=rel_data["source"],
+                        target_entity_id=rel_data["target"],
+                        type=rel_data["type"],
+                        confidence=rel_data["confidence"],
+                        evidence_references=[document.id],
+                        properties={
+                            "extraction_method": rel_data["source_method"],
+                            "evidence": rel_data.get("evidence", ""),
+                            "chunk_index": i
+                        }
+                    )
+                    all_relationships.append(relationship)
+            
+            # Resolve entities (deduplication and merging)
+            resolved_entities = self.entity_resolver.resolve_entities(all_entities)
             
             # Add entities to knowledge graph
-            entity_ids = {}
-            for entity_id, entity_data in all_entities.items():
-                entity = Entity(
-                    name=entity_data["name"],
-                    type=entity_data["type"],
-                    description=entity_data["description"],
-                    confidence=entity_data["confidence"],
-                    source_references=entity_data["source_references"],
-                    properties={"chunks": entity_data["chunks"]}
-                )
-                
-                # Generate embedding for entity
-                entity_text = f"{entity.name} {entity.description or ''}"
-                entity.embedding = self.embedding_service.encode_text(entity_text)
-                
+            entity_id_mapping = {}
+            for entity in resolved_entities:
                 stored_id = self.knowledge_graph.add_entity(entity)
-                entity_ids[entity_id] = stored_id
+                entity_id_mapping[entity.name] = stored_id
+            
+            # Update relationships with resolved entity IDs
+            resolved_relationships = []
+            for relationship in all_relationships:
+                # Map entity names to IDs
+                source_id = entity_id_mapping.get(relationship.source_entity_id)
+                target_id = entity_id_mapping.get(relationship.target_entity_id)
+                
+                if source_id and target_id:
+                    relationship.source_entity_id = source_id
+                    relationship.target_entity_id = target_id
+                    resolved_relationships.append(relationship)
             
             # Add relationships to knowledge graph
-            for relationship in all_relationships:
-                # Map entity names to stored IDs
-                relationship.source_entity_id = entity_ids.get(relationship.source_entity_id)
-                relationship.target_entity_id = entity_ids.get(relationship.target_entity_id)
-                
-                if relationship.source_entity_id and relationship.target_entity_id:
-                    self.knowledge_graph.add_relationship(relationship)
+            for relationship in resolved_relationships:
+                self.knowledge_graph.add_relationship(relationship)
             
-            logger.info(f"Extracted {len(all_entities)} entities and {len(all_relationships)} relationships")
+            logger.info(f"Extracted {len(resolved_entities)} entities and {len(resolved_relationships)} relationships")
             
         except Exception as e:
             logger.error(f"Knowledge extraction failed: {e}")

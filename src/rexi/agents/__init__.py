@@ -1,17 +1,17 @@
 """
-AI agents for REXI system.
+AI agents for REXI knowledge graph processing.
 """
 
-from rexi.agents.ingestion_agent import IngestionAgent
-from rexi.agents.extraction_agent import ExtractionAgent
-from rexi.agents.graph_builder_agent import GraphBuilderAgent
-from rexi.agents.reasoning_agent import ReasoningAgent
-from rexi.agents.memory_evolution_agent import MemoryEvolutionAgent
+from .entity_extractor import EntityExtractor
+from .relation_extractor import RelationExtractor
+from .entity_resolver import EntityResolver
+from .memory_evolution import MemoryEvolutionEngine
+from .temporal_reasoning import TemporalReasoningEngine
 
 __all__ = [
-    "IngestionAgent",
-    "ExtractionAgent", 
-    "GraphBuilderAgent",
-    "ReasoningAgent",
-    "MemoryEvolutionAgent",
+    "EntityExtractor",
+    "RelationExtractor", 
+    "EntityResolver",
+    "MemoryEvolutionEngine",
+    "TemporalReasoningEngine"
 ]
