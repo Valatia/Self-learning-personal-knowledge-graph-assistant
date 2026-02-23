@@ -2,7 +2,6 @@
 Advanced entity extraction agent for REXI.
 """
 
-import spacy
 import logging
 from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
@@ -11,6 +10,14 @@ import numpy as np
 from rexi.models.entities import Entity, EntityType
 from rexi.services.embedding_service import EmbeddingService
 from rexi.services.llm_service import LLMService
+
+# Try to import spaCy, but handle gracefully if it fails
+try:
+    import spacy
+    SPACY_AVAILABLE = True
+except ImportError:
+    SPACY_AVAILABLE = False
+    spacy = None
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +67,12 @@ class EntityExtractor:
     
     def _load_spacy_model(self):
         """Load spaCy model with custom components."""
+        if not SPACY_AVAILABLE:
+            logger.warning("spaCy not available, using fallback extraction only")
+            return
+        
         try:
-            # Try to load the large model for better accuracy
+            # Try to load large model for better accuracy
             self.nlp = spacy.load("en_core_web_lg")
             logger.info("Loaded spaCy large model")
         except OSError:
@@ -79,7 +90,7 @@ class EntityExtractor:
                     self.nlp = None
                     return
         
-        # Add custom patterns to the pipeline
+        # Add custom patterns to pipeline
         if self.nlp:
             ruler = self.nlp.add_pipe("entity_ruler", before="ner")
             
@@ -117,12 +128,21 @@ class EntityExtractor:
                             "start": ent.start_char,
                             "end": ent.end_char,
                             "source": "spacy",
-                            "context": self._get_entity_context(doc, ent)
+                            "context": self._get_entity_context(doc, ent),
+                            "dependency_info": self._extract_dependency_info(doc, ent)
                         })
             
             # Extract custom entities using patterns
             custom_entities = self._extract_custom_entities(doc, min_confidence)
             entities.extend(custom_entities)
+            
+            # Extract entities using dependency parsing
+            dependency_entities = self._extract_dependency_entities(doc, min_confidence)
+            entities.extend(dependency_entities)
+            
+            # Extract semantic role information
+            semantic_entities = self._extract_semantic_role_entities(doc, min_confidence)
+            entities.extend(semantic_entities)
             
             # Remove duplicates and merge overlapping entities
             entities = self._merge_overlapping_entities(entities)
@@ -414,6 +434,268 @@ class EntityExtractor:
                     return existing_entity
         
         return None
+    
+    def _extract_dependency_info(self, doc, entity) -> Dict:
+        """Extract dependency parsing information for entity."""
+        try:
+            # Find the token that corresponds to the entity
+            entity_tokens = [token for token in doc if token.idx >= entity.start_char and token.idx < entity.end_char]
+            
+            if not entity_tokens:
+                return {}
+            
+            main_token = entity_tokens[0]  # Use the first token as representative
+            
+            return {
+                "dependency": main_token.dep_,
+                "head": main_token.head.text if main_token.head else None,
+                "head_pos": main_token.head.pos_ if main_token.head else None,
+                "children": [child.text for child in main_token.children],
+                "pos": main_token.pos_,
+                "tag": main_token.tag_
+            }
+        except Exception as e:
+            logger.error(f"Dependency extraction failed: {e}")
+            return {}
+    
+    def _extract_dependency_entities(self, doc, min_confidence: float) -> List[Dict]:
+        """Extract entities using dependency parsing patterns."""
+        entities = []
+        
+        try:
+            # Pattern-based dependency extraction
+            for token in doc:
+                # Look for noun phrases that might be entities
+                if token.pos_ in ["NOUN", "PROPN"] and token.dep_ in ["nsubj", "dobj", "pobj"]:
+                    
+                    # Extract the full noun phrase
+                    noun_phrase = self._extract_noun_phrase(token)
+                    
+                    if noun_phrase and len(noun_phrase.split()) >= 2:  # Multi-word phrases
+                        entity_type = self._infer_entity_type_from_dependency(token)
+                        
+                        if entity_type:
+                            confidence = self._calculate_dependency_confidence(token, doc)
+                            
+                            if confidence >= min_confidence:
+                                entities.append({
+                                    "text": noun_phrase,
+                                    "type": entity_type,
+                                    "confidence": confidence,
+                                    "start": token.idx,
+                                    "end": token.idx + len(noun_phrase),
+                                    "source": "dependency_parsing",
+                                    "context": self._get_token_context(doc, token),
+                                    "dependency_info": {
+                                        "dependency": token.dep_,
+                                        "head": token.head.text if token.head else None,
+                                        "pos": token.pos_
+                                    }
+                                })
+            
+            return entities
+            
+        except Exception as e:
+            logger.error(f"Dependency entity extraction failed: {e}")
+            return []
+    
+    def _extract_noun_phrase(self, token) -> str:
+        """Extract the full noun phrase containing the token."""
+        words = [token.text]
+        
+        # Include preceding adjectives and determiners
+        current = token.head
+        while current and current.pos_ in ["ADJ", "DET"]:
+            words.insert(0, current.text)
+            current = current.head
+        
+        # Include following modifiers
+        for child in token.children:
+            if child.dep_ in ["amod", "compound"] and child.i > token.i:
+                words.append(child.text)
+        
+        return " ".join(words)
+    
+    def _infer_entity_type_from_dependency(self, token) -> Optional[EntityType]:
+        """Infer entity type from dependency information."""
+        # Dependency-based type inference
+        dep_mapping = {
+            "nsubj": EntityType.PERSON,  # Subject often a person
+            "dobj": EntityType.CONCEPT,  # Direct object often a concept
+            "pobj": EntityType.TOPIC,    # Object of preposition often a topic
+            "appos": EntityType.ORGANIZATION,  # Appositive often organization
+        }
+        
+        # POS-based type inference
+        pos_mapping = {
+            "PROPN": EntityType.PERSON,  # Proper noun often person
+            "NOUN": EntityType.CONCEPT,   # Common noun often concept
+        }
+        
+        # Try dependency mapping first
+        entity_type = dep_mapping.get(token.dep_)
+        if entity_type:
+            return entity_type
+        
+        # Fall back to POS mapping
+        entity_type = pos_mapping.get(token.pos_)
+        if entity_type:
+            return entity_type
+        
+        return None
+    
+    def _calculate_dependency_confidence(self, token, doc) -> float:
+        """Calculate confidence for dependency-based entities."""
+        base_confidence = 0.6
+        
+        # Higher confidence for certain dependencies
+        dependency_bonus = {
+            "nsubj": 0.2,
+            "dobj": 0.15,
+            "pobj": 0.1
+        }.get(token.dep_, 0.0)
+        
+        # Higher confidence for proper nouns
+        pos_bonus = 0.2 if token.pos_ == "PROPN" else 0.0
+        
+        # Context bonus (richer context = higher confidence)
+        context_bonus = min(len(list(token.children)) * 0.05, 0.15)
+        
+        confidence = base_confidence + dependency_bonus + pos_bonus + context_bonus
+        return min(confidence, 1.0)
+    
+    def _get_token_context(self, doc, token, window: int = 20) -> str:
+        """Get context around a token."""
+        start = max(0, token.idx - window)
+        end = min(len(doc.text), token.idx + len(token.text) + window)
+        return doc.text[start:end].strip()
+    
+    def _extract_semantic_role_entities(self, doc, min_confidence: float) -> List[Dict]:
+        """Extract entities using semantic role labeling patterns."""
+        entities = []
+        
+        try:
+            # Simple semantic role patterns
+            # These are simplified SRL patterns - in practice, you'd use a dedicated SRL model
+            
+            # Agent patterns (who is doing something)
+            for sent in doc.sents:
+                agent_patterns = self._find_semantic_agents(sent)
+                for pattern in agent_patterns:
+                    confidence = self._calculate_semantic_confidence(pattern, "agent")
+                    if confidence >= min_confidence:
+                        entities.append({
+                            "text": pattern["text"],
+                            "type": EntityType.PERSON,
+                            "confidence": confidence,
+                            "start": pattern["start"],
+                            "end": pattern["end"],
+                            "source": "semantic_role_labeling",
+                            "context": sent.text,
+                            "semantic_role": "agent"
+                        })
+                
+                # Patient patterns (what is being acted upon)
+                patient_patterns = self._find_semantic_patients(sent)
+                for pattern in patient_patterns:
+                    entity_type = self._infer_patient_entity_type(pattern["text"])
+                    confidence = self._calculate_semantic_confidence(pattern, "patient")
+                    if confidence >= min_confidence:
+                        entities.append({
+                            "text": pattern["text"],
+                            "type": entity_type,
+                            "confidence": confidence,
+                            "start": pattern["start"],
+                            "end": pattern["end"],
+                            "source": "semantic_role_labeling",
+                            "context": sent.text,
+                            "semantic_role": "patient"
+                        })
+            
+            return entities
+            
+        except Exception as e:
+            logger.error(f"Semantic role entity extraction failed: {e}")
+            return []
+    
+    def _find_semantic_agents(self, sent) -> List[Dict]:
+        """Find agent entities in a sentence."""
+        agents = []
+        
+        # Look for subjects of action verbs
+        for token in sent:
+            if token.pos_ == "VERB" and token.dep_ == "ROOT":
+                # Find subjects
+                for child in token.children:
+                    if child.dep_ in ["nsubj", "nsubjpass"]:
+                        agents.append({
+                            "text": child.text,
+                            "start": child.idx,
+                            "end": child.idx + len(child.text),
+                            "verb": token.text,
+                            "position": "subject"
+                        })
+        
+        return agents
+    
+    def _find_semantic_patients(self, sent) -> List[Dict]:
+        """Find patient entities in a sentence."""
+        patients = []
+        
+        # Look for direct objects of action verbs
+        for token in sent:
+            if token.pos_ == "VERB" and token.dep_ == "ROOT":
+                # Find direct objects
+                for child in token.children:
+                    if child.dep_ == "dobj":
+                        patients.append({
+                            "text": child.text,
+                            "start": child.idx,
+                            "end": child.idx + len(child.text),
+                            "verb": token.text,
+                            "position": "direct_object"
+                        })
+        
+        return patients
+    
+    def _infer_patient_entity_type(self, text: str) -> EntityType:
+        """Infer entity type for patient based on text."""
+        text_lower = text.lower()
+        
+        # Simple heuristics
+        if any(word in text_lower for word in ["project", "initiative", "program"]):
+            return EntityType.PROJECT
+        elif any(word in text_lower for word in ["skill", "ability", "capability"]):
+            return EntityType.SKILL
+        elif any(word in text_lower for word in ["concept", "idea", "theory"]):
+            return EntityType.CONCEPT
+        elif any(word in text_lower for word in ["tool", "software", "application"]):
+            return EntityType.TOOL
+        else:
+            return EntityType.TOPIC
+    
+    def _calculate_semantic_confidence(self, pattern: Dict, role: str) -> float:
+        """Calculate confidence for semantic role entities."""
+        base_confidence = 0.7
+        
+        # Role-specific confidence
+        role_bonus = {
+            "agent": 0.15,  # Agents usually more reliable
+            "patient": 0.10   # Patients slightly less reliable
+        }.get(role, 0.0)
+        
+        # Length bonus (longer entities often more specific)
+        length_bonus = min(len(pattern["text"].split()) * 0.05, 0.15)
+        
+        # Verb context bonus (certain verbs indicate clear semantic roles)
+        verb_bonus = 0.0
+        if "verb" in pattern:
+            strong_verbs = ["created", "developed", "implemented", "designed", "built"]
+            if pattern["verb"] in strong_verbs:
+                verb_bonus = 0.1
+        
+        confidence = base_confidence + role_bonus + length_bonus + verb_bonus
+        return min(confidence, 1.0)
     
     def get_extraction_statistics(self) -> Dict:
         """Get statistics about entity extraction performance."""

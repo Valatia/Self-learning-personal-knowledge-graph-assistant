@@ -2,11 +2,18 @@
 Advanced relation extraction agent for REXI.
 """
 
-import spacy
 import logging
 from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 import numpy as np
+
+# Try to import spaCy, but handle gracefully if it fails
+try:
+    import spacy
+    SPACY_AVAILABLE = True
+except ImportError:
+    SPACY_AVAILABLE = False
+    spacy = None
 
 from rexi.models.relationships import Relationship, RelationshipType
 from rexi.models.entities import Entity, EntityType

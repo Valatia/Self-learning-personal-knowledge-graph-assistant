@@ -369,9 +369,34 @@ class TemporalReasoningEngine:
     def _get_temporally_relevant_entities(self, temporal_aspects: Dict) -> List[Entity]:
         """Get entities relevant to temporal aspects."""
         try:
-            # This would need to be implemented in the Neo4j service
-            # For now, return empty list
-            return []
+            # Get entities with temporal validity
+            valid_at = None
+            if "time_expressions" in temporal_aspects:
+                # Use the first time expression as reference
+                time_expr = temporal_aspects["time_expressions"][0]
+                if "datetime" in time_expr:
+                    valid_at = time_expr["datetime"].isoformat()
+            
+            neo4j_entities = self.neo4j_service.find_entities_with_temporal_validity(valid_at)
+            entities = []
+            
+            for entity_data in neo4j_entities:
+                entity = Entity(
+                    id=str(entity_data.get("id", "")),
+                    name=entity_data.get("name", ""),
+                    type=EntityType(entity_data.get("type", "concept")),
+                    description=entity_data.get("description", ""),
+                    confidence=entity_data.get("confidence", 0.0),
+                    created_at=entity_data.get("created_at", datetime.utcnow()),
+                    updated_at=entity_data.get("updated_at", datetime.utcnow()),
+                    source_references=entity_data.get("source_references", []),
+                    properties=entity_data.get("properties", {}),
+                    privacy_level=entity_data.get("privacy_level", "public"),
+                    embedding=entity_data.get("embedding", None)
+                )
+                entities.append(entity)
+            
+            return entities
         except Exception as e:
             logger.error(f"Failed to get temporally relevant entities: {e}")
             return []
@@ -594,9 +619,12 @@ class TemporalReasoningEngine:
     
     def _get_entity_temporal_relationships(self, entity_id: str) -> List[Dict]:
         """Get temporal relationships for an entity."""
-        # This would need to be implemented in the Neo4j service
-        # For now, return empty list
-        return []
+        try:
+            temporal_rels = self.neo4j_service.get_temporal_relationships(entity_id)
+            return temporal_rels
+        except Exception as e:
+            logger.error(f"Failed to get entity temporal relationships: {e}")
+            return []
     
     def _build_entity_timeline(self, entity: Dict, temporal_rels: List[Dict]) -> List[Dict]:
         """Build timeline from entity and temporal relationships."""

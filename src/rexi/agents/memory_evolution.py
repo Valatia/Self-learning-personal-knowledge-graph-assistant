@@ -98,9 +98,26 @@ class MemoryEvolutionEngine:
     def _get_existing_entities(self) -> List[Entity]:
         """Get all existing entities from knowledge graph."""
         try:
-            # This would need to be implemented in the Neo4j service
-            # For now, return empty list
-            return []
+            neo4j_entities = self.neo4j_service.get_all_entities()
+            entities = []
+            
+            for entity_data in neo4j_entities:
+                entity = Entity(
+                    id=str(entity_data.get("id", "")),
+                    name=entity_data.get("name", ""),
+                    type=EntityType(entity_data.get("type", "concept")),
+                    description=entity_data.get("description", ""),
+                    confidence=entity_data.get("confidence", 0.0),
+                    created_at=entity_data.get("created_at", datetime.utcnow()),
+                    updated_at=entity_data.get("updated_at", datetime.utcnow()),
+                    source_references=entity_data.get("source_references", []),
+                    properties=entity_data.get("properties", {}),
+                    privacy_level=entity_data.get("privacy_level", "public"),
+                    embedding=entity_data.get("embedding", None)
+                )
+                entities.append(entity)
+            
+            return entities
         except Exception as e:
             logger.error(f"Failed to get existing entities: {e}")
             return []
@@ -108,9 +125,29 @@ class MemoryEvolutionEngine:
     def _get_existing_relationships(self) -> List[Relationship]:
         """Get all existing relationships from knowledge graph."""
         try:
-            # This would need to be implemented in the Neo4j service
-            # For now, return empty list
-            return []
+            neo4j_relationships = self.neo4j_service.get_all_relationships()
+            relationships = []
+            
+            for rel_data in neo4j_relationships:
+                rel_info = rel_data.get("r", {})
+                source_info = rel_data.get("a", {})
+                target_info = rel_data.get("b", {})
+                
+                relationship = Relationship(
+                    id=str(rel_info.get("id", "")),
+                    source_entity_id=str(source_info.get("id", "")),
+                    target_entity_id=str(target_info.get("id", "")),
+                    type=RelationshipType(rel_info.get("type", "related_to")),
+                    strength_score=rel_info.get("strength_score", 0.5),
+                    confidence=rel_info.get("confidence", 0.5),
+                    created_at=rel_info.get("created_at", datetime.utcnow()),
+                    updated_at=rel_info.get("updated_at", datetime.utcnow()),
+                    evidence_references=rel_info.get("evidence_references", []),
+                    properties=rel_info.get("properties", {})
+                )
+                relationships.append(relationship)
+            
+            return relationships
         except Exception as e:
             logger.error(f"Failed to get existing relationships: {e}")
             return []
@@ -476,9 +513,30 @@ class MemoryEvolutionEngine:
     
     def _get_old_entities(self, cutoff_date: datetime) -> List[Entity]:
         """Get entities older than cutoff date."""
-        # This would need to be implemented in the Neo4j service
-        # For now, return empty list
-        return []
+        try:
+            neo4j_entities = self.neo4j_service.get_old_entities(cutoff_date)
+            entities = []
+            
+            for entity_data in neo4j_entities:
+                entity = Entity(
+                    id=str(entity_data.get("id", "")),
+                    name=entity_data.get("name", ""),
+                    type=EntityType(entity_data.get("type", "concept")),
+                    description=entity_data.get("description", ""),
+                    confidence=entity_data.get("confidence", 0.0),
+                    created_at=entity_data.get("created_at", datetime.utcnow()),
+                    updated_at=entity_data.get("updated_at", datetime.utcnow()),
+                    source_references=entity_data.get("source_references", []),
+                    properties=entity_data.get("properties", {}),
+                    privacy_level=entity_data.get("privacy_level", "public"),
+                    embedding=entity_data.get("embedding", None)
+                )
+                entities.append(entity)
+            
+            return entities
+        except Exception as e:
+            logger.error(f"Failed to get old entities: {e}")
+            return []
     
     def _forget_entity(self, entity: Entity):
         """Remove entity from knowledge graph."""

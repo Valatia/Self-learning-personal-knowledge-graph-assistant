@@ -15,8 +15,9 @@ from rexi.models.relationships import Relationship, RelationshipType
 from rexi.services.embedding_service import EmbeddingService
 from rexi.services.llm_service import LLMService
 from rexi.core.knowledge_graph import KnowledgeGraph
-from rexi.agents.entity_extractor import EntityExtractor
-from rexi.agents.relation_extractor import RelationExtractor
+# Temporarily disable entity extractor due to spaCy compatibility issues
+# from rexi.agents.entity_extractor import EntityExtractor
+# from rexi.agents.relation_extractor import RelationExtractor
 from rexi.agents.entity_resolver import EntityResolver
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,9 @@ class IngestionEngine:
         self.embedding_service = EmbeddingService()
         self.llm_service = LLMService()
         self.knowledge_graph = KnowledgeGraph()
-        self.entity_extractor = EntityExtractor()
-        self.relation_extractor = RelationExtractor()
+        # Temporarily disable entity extractor due to spaCy compatibility
+        # self.entity_extractor = EntityExtractor()
+        # self.relation_extractor = RelationExtractor()
         self.entity_resolver = EntityResolver()
         
         # Supported file types
@@ -146,11 +148,13 @@ class IngestionEngine:
             all_relationships = []
             
             for i, chunk in enumerate(chunks):
-                # Extract entities using advanced NER
-                entities_data = self.entity_extractor.extract_entities(chunk)
+                # Temporarily disable entity extraction due to spaCy compatibility
+                # entities_data = self.entity_extractor.extract_entities(chunk)
+                entities_data = []
                 
-                # Extract relations using dependency parsing
-                relationships_data = self.relation_extractor.extract_relations(chunk, entities_data)
+                # Temporarily disable relation extraction due to spaCy compatibility
+                # relationships_data = self.relation_extractor.extract_relations(chunk, entities_data)
+                relationships_data = []
                 
                 # Process entities
                 for entity_data in entities_data:
