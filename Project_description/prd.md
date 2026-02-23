@@ -8,16 +8,16 @@ Project: Self-Learning Personal Knowledge Graph Assistant (SLPKGA)
 
 1.1 Vision
 
-Build a self-learning cognitive AI assistant that continuously ingests user information, converts it into a structured knowledge graph, and performs reasoning to answer queries with traceable explanations.
+Build a self-learning cognitive AI assistant that continuously ingests user information, converts it into a structured knowledge graph, and performs reasoning using a custom fine-tuned LLM model specifically designed for knowledge graph operations.
 
 The system should act as a persistent external brain capable of:
 
-* Long-term memory
-* Relationship discovery
-* Temporal reasoning
-* Knowledge evolution tracking
-* Insight generation
-* Personal research assistance
+* Long-term memory with custom AI reasoning
+* Relationship discovery using specialized LLM
+* Temporal reasoning with domain-specific prompts
+* Knowledge evolution tracking with autonomous learning
+* Insight generation using fine-tuned inference
+* Personal research assistance with custom AI models
 
 ---
 

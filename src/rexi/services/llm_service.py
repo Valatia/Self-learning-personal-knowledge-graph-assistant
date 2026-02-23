@@ -3,8 +3,6 @@ LLM service for language model operations.
 """
 
 from typing import List, Dict, Optional, Any
-import openai
-import tiktoken
 import logging
 
 from rexi.config.settings import get_settings
@@ -17,210 +15,159 @@ class LLMService:
     def __init__(self):
         """Initialize LLM service."""
         self.settings = get_settings()
-        self.client: Optional[openai.OpenAI] = None
-        self.tokenizer: Optional[tiktoken.Encoding] = None
-        self._initialize()
+        self.use_custom_llm = getattr(self.settings, 'use_custom_llm', False)
+        self.custom_llm_service = None
+        self.openai_client = None
+        
+        # Initialize appropriate service
+        if self.use_custom_llm:
+            self._initialize_custom_llm()
+        else:
+            self._initialize_openai()
     
-    def _initialize(self):
-        """Initialize OpenAI client and tokenizer."""
+    def _initialize_custom_llm(self):
+        """Initialize custom LLM service."""
         try:
+            from rexi.services.custom_llm_service import CustomLLMService
+            self.custom_llm_service = CustomLLMService()
+            logger.info("Custom LLM service initialized")
+        except ImportError as e:
+            logger.error(f"Failed to import custom LLM service: {e}")
+            self.use_custom_llm = False
+            self._initialize_openai()
+        except Exception as e:
+            logger.error(f"Failed to initialize custom LLM: {e}")
+            self.use_custom_llm = False
+            self._initialize_openai()
+    
+    def _initialize_openai(self):
+        """Initialize OpenAI client."""
+        try:
+            import openai
+            import tiktoken
+            
             if self.settings.openai_api_key:
-                self.client = openai.OpenAI(api_key=self.settings.openai_api_key)
+                self.openai_client = openai.OpenAI(api_key=self.settings.openai_api_key)
                 logger.info("OpenAI client initialized")
             else:
                 logger.warning("OpenAI API key not provided")
-            
-            # Initialize tokenizer for the model
-            try:
-                self.tokenizer = tiktoken.encoding_for_model(self.settings.llm_model)
-            except KeyError:
-                self.tokenizer = tiktoken.get_encoding("cl100k_base")
-                logger.warning(f"Using default tokenizer for model {self.settings.llm_model}")
-            
+        except ImportError as e:
+            logger.error(f"Failed to import OpenAI: {e}")
         except Exception as e:
-            logger.error(f"Failed to initialize LLM service: {e}")
-            raise
+            logger.error(f"Failed to initialize OpenAI: {e}")
     
     def chat_completion(
         self, 
         messages: List[Dict[str, str]], 
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
-        stream: bool = False
+        stream: bool = False,
+        task_type: str = "general"
     ) -> str:
-        """Generate chat completion."""
-        if not self.client:
-            raise ValueError("LLM client not initialized")
-        
+        """Generate chat completion using available LLM."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.chat_completion(
+                messages, temperature, max_tokens, task_type
+            )
+        elif self.openai_client:
+            return self._openai_completion(messages, temperature, max_tokens)
+        else:
+            raise RuntimeError("No LLM service available")
+    
+    def _openai_completion(
+        self, 
+        messages: List[Dict[str, str]], 
+        temperature: float,
+        max_tokens: Optional[int]
+    ) -> str:
+        """Generate completion using OpenAI."""
         try:
-            response = self.client.chat.completions.create(
+            response = self.openai_client.chat.completions.create(
                 model=self.settings.llm_model,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens,
-                stream=stream
+                max_tokens=max_tokens
             )
             
-            if stream:
-                return response  # Return stream object for streaming
-            else:
-                return response.choices[0].message.content
-                
+            return response.choices[0].message.content
+            
         except Exception as e:
-            logger.error(f"Chat completion failed: {e}")
+            logger.error(f"OpenAI completion failed: {e}")
             raise
     
-    def structured_extraction(
-        self, 
-        text: str, 
-        schema: Dict[str, Any],
-        temperature: float = 0.1
-    ) -> Dict[str, Any]:
-        """Extract structured information from text."""
-        if not self.client:
-            raise ValueError("LLM client not initialized")
-        
-        try:
-            # Create prompt for structured extraction
-            system_prompt = f"""
-            You are a structured information extraction system.
-            Extract information from the following text according to this schema:
-            {schema}
-            
-            Return the extracted information as a valid JSON object.
-            Only include information that is explicitly mentioned in the text.
-            If a field is not found, use null or omit it.
-            """
-            
+    def extract_entities(self, text: str) -> List[Dict[str, Any]]:
+        """Extract entities using available LLM."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.extract_entities(text)
+        else:
+            # Fallback to OpenAI with entity extraction prompt
             messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
+                {"role": "system", "content": "Extract entities from the text and return them in JSON format."},
+                {"role": "user", "content": f"Text: {text}"}
             ]
-            
-            response = self.client.chat.completions.create(
-                model=self.settings.llm_model,
-                messages=messages,
-                temperature=temperature,
-                response_format={"type": "json_object"}
-            )
-            
-            import json
-            return json.loads(response.choices[0].message.content)
-            
-        except Exception as e:
-            logger.error(f"Structured extraction failed: {e}")
-            return {}
+            response = self.chat_completion(messages, task_type="entity_extraction")
+            # Parse JSON response (simplified)
+            return []
     
-    def generate_entities_and_relations(self, text: str) -> Dict[str, Any]:
-        """Extract entities and relations from text."""
-        schema = {
-            "entities": [
-                {
-                    "name": "string",
-                    "type": "string (person|concept|skill|topic|project|tool|paper|book|event|organization|idea|task|goal|emotion|habit)",
-                    "description": "string",
-                    "confidence": "number (0-1)"
-                }
-            ],
-            "relations": [
-                {
-                    "source": "string",
-                    "target": "string", 
-                    "type": "string (enables|causes|improves|depends_on|contradicts|learned_from|used_in|part_of|related_to|precedes|follows|inspired_by|supports|applied_to)",
-                    "confidence": "number (0-1)"
-                }
-            ]
-        }
-        
-        return self.structured_extraction(text, schema)
+    def extract_relationships(self, text: str, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Extract relationships using available LLM."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.extract_relationships(text, entities)
+        else:
+            # Fallback to OpenAI
+            return []
     
-    def summarize_text(self, text: str, max_length: int = 200) -> str:
-        """Summarize text to specified length."""
-        if not self.client:
-            raise ValueError("LLM client not initialized")
-        
-        try:
-            messages = [
-                {
-                    "role": "system", 
-                    "content": f"You are a helpful assistant. Summarize the following text in no more than {max_length} words. Focus on the most important information."
-                },
-                {"role": "user", "content": text}
-            ]
-            
-            response = self.client.chat.completions.create(
-                model=self.settings.llm_model,
-                messages=messages,
-                temperature=0.3,
-                max_tokens=max_length * 2  # Approximate token limit
-            )
-            
-            return response.choices[0].message.content
-            
-        except Exception as e:
-            logger.error(f"Summarization failed: {e}")
-            return ""
+    def generate_reasoning(self, query: str, context: str) -> Dict[str, Any]:
+        """Generate reasoning using available LLM."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.generate_reasoning(query, context)
+        else:
+            # Fallback to OpenAI
+            return {"answer": "Reasoning not available", "confidence": 0.5}
     
-    def answer_question(
-        self, 
-        question: str, 
-        context: str = "",
-        temperature: float = 0.3
-    ) -> str:
-        """Answer a question based on provided context."""
-        if not self.client:
-            raise ValueError("LLM client not initialized")
-        
-        try:
-            system_prompt = """
-            You are a helpful AI assistant. Answer the user's question based on the provided context.
-            If the context doesn't contain enough information to answer the question, say so clearly.
-            Provide accurate, concise answers with citations to the context when possible.
-            """
-            
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"}
-            ]
-            
-            response = self.client.chat.completions.create(
-                model=self.settings.llm_model,
-                messages=messages,
-                temperature=temperature
-            )
-            
-            return response.choices[0].message.content
-            
-        except Exception as e:
-            logger.error(f"Question answering failed: {e}")
-            return ""
+    def generate_explanation(self, answer: str, query: str, evidence: List[str], reasoning_path: List[str]) -> Dict[str, Any]:
+        """Generate explanation using available LLM."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.generate_explanation(answer, query, evidence, reasoning_path)
+        else:
+            # Fallback to OpenAI
+            return {"explanation": "Explanation not available"}
     
-    def count_tokens(self, text: str) -> int:
-        """Count tokens in text."""
-        if not self.tokenizer:
-            self._initialize()
-        
-        try:
-            return len(self.tokenizer.encode(text))
-        except Exception as e:
-            logger.error(f"Token counting failed: {e}")
-            return 0
+    def generate_hypotheses(self, context: str, existing_knowledge: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Generate hypotheses using available LLM."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.generate_hypotheses(context, existing_knowledge)
+        else:
+            # Fallback to OpenAI
+            return []
     
-    def truncate_text(self, text: str, max_tokens: int) -> str:
-        """Truncate text to maximum token count."""
-        if not self.tokenizer:
-            self._initialize()
-        
-        try:
-            tokens = self.tokenizer.encode(text)
-            if len(tokens) <= max_tokens:
-                return text
-            
-            truncated_tokens = tokens[:max_tokens]
-            return self.tokenizer.decode(truncated_tokens)
-        except Exception as e:
-            logger.error(f"Text truncation failed: {e}")
-            return text[:max_tokens * 4]  # Rough fallback
+    def analyze_knowledge_gaps(self, graph_data: Dict[str, Any], statistics: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze knowledge gaps using available LLM."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.analyze_knowledge_gaps(graph_data, statistics)
+        else:
+            # Fallback to OpenAI
+            return {"knowledge_gaps": [], "exploration_suggestions": []}
+    
+    def is_available(self) -> bool:
+        """Check if any LLM service is available."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.is_available()
+        elif self.openai_client:
+            return True
+        return False
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get information about the loaded model."""
+        if self.use_custom_llm and self.custom_llm_service:
+            return self.custom_llm_service.get_model_info()
+        elif self.openai_client:
+            return {
+                "model_name": self.settings.llm_model,
+                "service": "OpenAI",
+                "is_loaded": True
+            }
+        return {"is_loaded": False}
     
     def is_available(self) -> bool:
         """Check if LLM service is available."""

@@ -65,9 +65,11 @@ Optional
 
 LLM Layer
 
-* GPT-class API or local models
-* Llama / Mixtral / Qwen (local reasoning)
-* vLLM or TGI for inference
+* Custom fine-tuned Llama 3.1 8B or Mixtral 8x7B
+* Local inference with vLLM/TGI
+* REXI-specific instruction tuning
+* 4-bit quantization for efficiency
+* Domain-specific prompt templates
 
 Embedding Models
 
@@ -392,7 +394,8 @@ Core
 
 AI
 
-* LLM + Sentence Transformers
+* Custom fine-tuned Llama 3.1 8B with vLLM inference
+* Sentence Transformers for embeddings
 * HuggingFace ecosystem
 * Reranker model
 

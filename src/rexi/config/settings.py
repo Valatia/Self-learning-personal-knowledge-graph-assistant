@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     llm_model: str = "gpt-3.5-turbo"
     
+    # Custom LLM Settings
+    custom_llm_model: str = "meta-llama/Llama-3.1-8B-Instruct"
+    llm_quantization: bool = True
+    llm_max_tokens: int = 2048
+    llm_temperature: float = 0.7
+    use_custom_llm: bool = True
+    
     # File Processing
     upload_dir: str = "data/uploads"
     max_file_size: int = 100 * 1024 * 1024  # 100MB

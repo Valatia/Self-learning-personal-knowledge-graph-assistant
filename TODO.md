@@ -96,8 +96,18 @@
 
 ---
 
-## Phase 4: User Interface & Visualization 🚧 IN PROGRESS
-**Status**: Frontend development started with Next.js 14 and modern UI stack 
+## Phase 4: User Interface & Custom LLM Integration 🚧 IN PROGRESS
+**Status**: Frontend development started, transitioning to custom LLM integration 
+
+### 🤖 Custom LLM Integration
+- [ ] Create custom LLM service with local inference
+- [ ] Implement fine-tuned Llama 3.1 8B model integration
+- [ ] Add REXI-specific prompt templates
+- [ ] Implement model quantization and optimization
+- [ ] Create model management and versioning system
+- [ ] Add specialized prompts for entity extraction
+- [ ] Implement custom reasoning prompts
+- [ ] Add explanation generation templates
 
 ### 📋 Frontend Development
 - [x] Set up Next.js 14 with TypeScript and Tailwind CSS
@@ -111,6 +121,21 @@
 - [ ] Add insight dashboard
 - [ ] Create interactive graph explorer
 - [ ] Build learning evolution charts
+
+### ⚡ Real-time Integration
+- [ ] Implement WebSocket service for live updates
+- [ ] Create real-time React hooks
+- [ ] Add live graph updates and animations
+- [ ] Implement progress indicators for long operations
+- [ ] Add error handling and reconnection logic
+
+### 📊 Advanced Visualization
+- [ ] Create 3D concept cluster visualization
+- [ ] Implement interactive timeline with filtering
+- [ ] Add learning progress dashboard
+- [ ] Create explanation engine UI with graph paths
+- [ ] Implement evidence citation display
+- [ ] Add confidence scoring visualization
 
 ### 📋 Conversational Interface
 - [ ] Implement natural language Q&A interface
