@@ -9,9 +9,11 @@ import logging
 from rexi.models.entities import Entity, EntityType
 from rexi.models.relationships import Relationship, RelationshipType
 from rexi.models.knowledge_graph import KnowledgeGraphPath
-from rexi.services.llm_service import LLMService
 from rexi.services.embedding_service import EmbeddingService
+from rexi.services.llm_service import LLMService
 from rexi.core.knowledge_graph import KnowledgeGraph
+from rexi.core.hybrid_retrieval import HybridRetrievalEngine
+from rexi.agents.advanced_reasoning import AdvancedReasoningEngine
 
 logger = logging.getLogger(__name__)
 
@@ -23,48 +25,245 @@ class ReasoningEngine:
         self.knowledge_graph = KnowledgeGraph()
         self.llm_service = LLMService()
         self.embedding_service = EmbeddingService()
+        self.hybrid_retrieval = HybridRetrievalEngine()
+        self.advanced_reasoning = AdvancedReasoningEngine()
     
     def answer_query(
         self, 
         query: str, 
         max_hops: int = 3,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        reasoning_type: str = "auto"
     ) -> Dict[str, Any]:
         """Answer a query using reasoning over the knowledge graph."""
         try:
-            # Step 1: Extract entities from query
-            query_entities = self._extract_query_entities(query)
+            # Step 1: Determine reasoning type
+            if reasoning_type == "auto":
+                reasoning_type = self._determine_reasoning_type(query)
             
-            # Step 2: Find relevant entities in knowledge graph
-            relevant_entities = self._find_relevant_entities(query, query_entities)
-            
-            # Step 3: Build reasoning subgraph
-            subgraph = self._build_reasoning_subgraph(relevant_entities, max_hops)
-            
-            # Step 4: Perform reasoning
-            reasoning_result = self._perform_reasoning(query, subgraph)
-            
-            # Step 5: Generate answer
-            answer = self._generate_answer(query, reasoning_result, temperature)
-            
-            return {
-                "query": query,
-                "answer": answer,
-                "reasoning_path": reasoning_result.get("path"),
-                "confidence": reasoning_result.get("confidence", 0.5),
-                "evidence": reasoning_result.get("evidence", []),
-                "entities_used": reasoning_result.get("entities_used", []),
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
+            # Step 2: Use appropriate reasoning method
+            if reasoning_type in ["multi_hop", "causal", "analogical", "counterfactual"]:
+                return self._advanced_reasoning_answer(query, reasoning_type, max_hops, temperature)
+            else:
+                return self._standard_reasoning_answer(query, max_hops, temperature)
+                
         except Exception as e:
             logger.error(f"Query answering failed: {e}")
             return {
                 "query": query,
-                "answer": "I'm sorry, I encountered an error while processing your query.",
+                "answer": "I'm sorry, I couldn't process your query.",
+                "confidence": 0.0,
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
             }
+    
+    def _determine_reasoning_type(self, query: str) -> str:
+        """Determine the best reasoning type for the query."""
+        query_lower = query.lower()
+        
+        # Check for complex reasoning patterns
+        if any(word in query_lower for word in ["why", "cause", "because", "due to", "leads to"]):
+            return "causal"
+        elif any(word in query_lower for word in ["what if", "if", "would", "could", "imagine"]):
+            return "counterfactual"
+        elif any(word in query_lower for word in ["like", "similar", "compare", "analogy"]):
+            return "analogical"
+        elif any(word in query_lower for word in ["how", "process", "steps", "chain", "sequence"]):
+            return "multi_hop"
+        else:
+            return "standard"
+    
+    def _advanced_reasoning_answer(self, query: str, reasoning_type: str, max_hops: int, temperature: float) -> Dict:
+        """Use advanced reasoning engine for complex queries."""
+        try:
+            if reasoning_type == "causal":
+                result = self.advanced_reasoning.causal_reasoning(query)
+            elif reasoning_type == "counterfactual":
+                # Extract conditions for counterfactual
+                changed_conditions = self._extract_counterfactual_conditions(query)
+                result = self.advanced_reasoning.counterfactual_reasoning(query, changed_conditions)
+            elif reasoning_type == "analogical":
+                # Extract source entity and target domain
+                source_entity, target_domain = self._extract_analogical_components(query)
+                result = self.advanced_reasoning.analogical_reasoning(source_entity, target_domain, query)
+            else:  # multi_hop
+                result = self.advanced_reasoning.multi_hop_reasoning(query)
+            
+            # Format result for consistency
+            return {
+                "query": query,
+                "answer": result.get("final_answer", {}).get("answer", result.get("answer", "No answer generated")),
+                "confidence": result.get("confidence", 0.0),
+                "reasoning_type": reasoning_type,
+                "reasoning_paths": result.get("reasoning_paths", []),
+                "explanation": result.get("explanation", ""),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Advanced reasoning failed: {e}")
+            return self._fallback_reasoning_answer(query)
+    
+    def _standard_reasoning_answer(self, query: str, max_hops: int, temperature: float) -> Dict:
+        """Use standard reasoning for simple queries."""
+        try:
+            # Use hybrid retrieval to find relevant information
+            retrieval_result = self.hybrid_retrieval.hybrid_search(query)
+            
+            # Extract relevant entities and relationships
+            relevant_entities = []
+            relevant_relationships = []
+            
+            for result in retrieval_result.get("results", []):
+                if result.get("type") == "entity":
+                    relevant_entities.append(result)
+                elif result.get("type") == "relationship":
+                    relevant_relationships.append(result)
+            
+            # Generate answer using LLM
+            if relevant_entities or relevant_relationships:
+                answer = self._generate_answer_from_context(query, relevant_entities, relevant_relationships, temperature)
+            else:
+                answer = "I don't have enough information to answer that question."
+            
+            return {
+                "query": query,
+                "answer": answer,
+                "confidence": self._calculate_answer_confidence(relevant_entities, relevant_relationships),
+                "reasoning_type": "standard",
+                "relevant_entities": len(relevant_entities),
+                "relevant_relationships": len(relevant_relationships),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Standard reasoning failed: {e}")
+            return self._fallback_reasoning_answer(query)
+    
+    def _generate_answer_from_context(self, query: str, entities: List[Dict], relationships: List[Dict], temperature: float) -> str:
+        """Generate answer from retrieved context using LLM."""
+        try:
+            # Build context string
+            context_parts = []
+            
+            if entities:
+                context_parts.append("Relevant entities:")
+                for entity in entities[:5]:  # Limit to top 5
+                    props = entity.get("properties", {})
+                    context_parts.append(f"- {props.get('name', 'Unknown')}: {props.get('description', 'No description')}")
+            
+            if relationships:
+                context_parts.append("\nRelevant relationships:")
+                for rel in relationships[:5]:  # Limit to top 5
+                    props = rel.get("properties", {})
+                    context_parts.append(f"- {props.get('source', 'Unknown')} {props.get('type', 'related to')} {props.get('target', 'Unknown')}")
+            
+            context = "\n".join(context_parts)
+            
+            # Generate answer
+            system_prompt = """
+            You are a knowledgeable assistant. Answer the user's question based on the provided context.
+            Be concise, accurate, and helpful. If the context doesn't contain enough information, say so.
+            """
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
+            ]
+            
+            response = self.llm_service.chat_completion(
+                messages,
+                temperature=temperature,
+                max_tokens=500
+            )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Answer generation failed: {e}")
+            return "I couldn't generate an answer based on the available information."
+    
+    def _calculate_answer_confidence(self, entities: List[Dict], relationships: List[Dict]) -> float:
+        """Calculate confidence in the answer based on retrieved information."""
+        if not entities and not relationships:
+            return 0.0
+        
+        # Base confidence from number of relevant items
+        base_confidence = min((len(entities) + len(relationships)) / 10.0, 1.0)
+        
+        # Adjust based on average scores
+        scores = []
+        for entity in entities:
+            scores.append(entity.get("score", 0.5))
+        for rel in relationships:
+            scores.append(rel.get("score", 0.5))
+        
+        if scores:
+            avg_score = sum(scores) / len(scores)
+            return base_confidence * avg_score
+        
+        return base_confidence
+    
+    def _extract_counterfactual_conditions(self, query: str) -> List[Dict]:
+        """Extract conditions for counterfactual reasoning."""
+        # Simple extraction - in production, use more sophisticated NLP
+        conditions = []
+        
+        # Look for "if X then Y" patterns
+        import re
+        
+        patterns = [
+            r"if (.+?) then (.+)",
+            r"if (.+?), (.+)",
+            r"what if (.+?) (.+)"
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, query, re.IGNORECASE)
+            for match in matches:
+                if len(match) == 2:
+                    conditions.append({
+                        "condition": match[0],
+                        "consequence": match[1],
+                        "type": "conditional"
+                    })
+        
+        return conditions
+    
+    def _extract_analogical_components(self, query: str) -> Tuple[str, str]:
+        """Extract source entity and target domain for analogical reasoning."""
+        # Simple extraction - in production, use more sophisticated NLP
+        import re
+        
+        # Look for "X is like Y" or "compare X to Y" patterns
+        patterns = [
+            r"(.+?) is like (.+)",
+            r"compare (.+?) to (.+)",
+            r"(.+?) similar to (.+)"
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, query, re.IGNORECASE)
+            if match:
+                return match.group(1).strip(), match.group(2).strip()
+        
+        # Fallback: return first two capitalized terms
+        capitalized_terms = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+        if len(capitalized_terms) >= 2:
+            return capitalized_terms[0], capitalized_terms[1]
+        
+        return "", ""
+    
+    def _fallback_reasoning_answer(self, query: str) -> Dict:
+        """Fallback reasoning answer when advanced methods fail."""
+        return {
+            "query": query,
+            "answer": "I'm sorry, I couldn't process your query. Please try rephrasing it.",
+            "confidence": 0.1,
+            "reasoning_type": "fallback",
+            "explanation": "Advanced reasoning failed, using fallback response",
+            "timestamp": datetime.utcnow().isoformat()
+        }
     
     def find_insights(self, entity_types: List[EntityType] = None) -> List[Dict[str, Any]]:
         """Find insights in the knowledge graph."""
