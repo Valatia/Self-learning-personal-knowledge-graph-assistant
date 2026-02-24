@@ -55,10 +55,10 @@ export default function HomePage() {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary-50 via-white to-blue-50">
+      <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-cyan-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
           <div className="text-center">
-            <h1 className="text-5xl font-bold text-gradient mb-6">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-6">
               REXI
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
@@ -70,10 +70,10 @@ export default function HomePage() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button className="btn-primary text-lg px-8 py-3">
+              <button className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg transition-colors duration-200 text-lg">
                 Get Started
               </button>
-              <button className="btn-secondary text-lg px-8 py-3">
+              <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-3 px-8 rounded-lg transition-colors duration-200 text-lg">
                 View Documentation
               </button>
             </div>
@@ -87,7 +87,7 @@ export default function HomePage() {
           <h2 className="text-3xl font-bold text-center mb-12">Development Progress</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {phases.map((item) => (
-              <div key={item.phase} className="card text-center">
+              <div key={item.phase} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
                 <div className={`inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 ${
                   item.status === 'complete' ? 'bg-green-100' : 
                   item.status === 'current' ? 'bg-blue-100' : 'bg-gray-100'
@@ -115,7 +115,7 @@ export default function HomePage() {
           <h2 className="text-3xl font-bold text-center mb-12">Core Capabilities</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, index) => (
-              <div key={index} className="card hover:shadow-lg transition-shadow duration-300">
+              <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-shadow duration-300">
                 <feature.icon className={`w-8 h-8 ${feature.color} mb-4`} />
                 <h3 className="font-semibold text-xl mb-3">{feature.title}</h3>
                 <p className="text-gray-600">{feature.description}</p>
@@ -130,19 +130,19 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 text-center">
             <div>
-              <div className="text-4xl font-bold text-primary-600 mb-2">3</div>
+              <div className="text-4xl font-bold text-blue-600 mb-2">3</div>
               <div className="text-gray-600">Phases Complete</div>
             </div>
             <div>
-              <div className="text-4xl font-bold text-primary-600 mb-2">40+</div>
+              <div className="text-4xl font-bold text-blue-600 mb-2">40+</div>
               <div className="text-gray-600">Components</div>
             </div>
             <div>
-              <div className="text-4xl font-bold text-primary-600 mb-2">10K+</div>
+              <div className="text-4xl font-bold text-blue-600 mb-2">10K+</div>
               <div className="text-gray-600">Lines of Code</div>
             </div>
             <div>
-              <div className="text-4xl font-bold text-primary-600 mb-2">100%</div>
+              <div className="text-4xl font-bold text-blue-600 mb-2">100%</div>
               <div className="text-gray-600">Test Coverage</div>
             </div>
           </div>
@@ -150,19 +150,19 @@ export default function HomePage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-16 bg-gradient-to-r from-primary-600 to-blue-600">
+      <section className="py-16 bg-gradient-to-r from-blue-600 to-cyan-600">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold text-white mb-4">
             Ready to Transform Your Knowledge Management?
           </h2>
-          <p className="text-xl text-primary-100 mb-8">
+          <p className="text-xl text-blue-100 mb-8">
             Experience the power of AI-driven personal knowledge graphs with autonomous learning.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-white text-primary-600 hover:bg-gray-50 font-medium py-3 px-8 rounded-lg transition-colors duration-200">
+            <button className="bg-white text-blue-600 hover:bg-gray-50 font-medium py-3 px-8 rounded-lg transition-colors duration-200">
               Start Using REXI
             </button>
-            <button className="border-2 border-white text-white hover:bg-white hover:text-primary-600 font-medium py-3 px-8 rounded-lg transition-colors duration-200">
+            <button className="border-2 border-white text-white hover:bg-white hover:text-blue-600 font-medium py-3 px-8 rounded-lg transition-colors duration-200">
               View on GitHub
             </button>
           </div>
